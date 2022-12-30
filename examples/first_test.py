@@ -1,7 +1,7 @@
-from litedb import LiteDB
+from postgreslite import PostgresLite
 
 # Create database (or uses existing one)
-db = LiteDB("hello_world.db")
+db = PostgresLite("hello_world.db")
 
 # Create table
 data1 = db.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)")
