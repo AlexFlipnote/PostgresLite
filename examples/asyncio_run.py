@@ -31,7 +31,7 @@ async def main():
         loop.create_task(background_task(db, g))
 
     await asyncio.sleep(1)
-    while db.queue.qsize() >= 1:
+    while db.queue_size >= 1:
         await asyncio.sleep(0.1)
 
     # Check if data exists

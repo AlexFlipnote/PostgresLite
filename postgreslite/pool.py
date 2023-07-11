@@ -33,15 +33,15 @@ class PoolConnection:
     ):
         self._pool = pool
 
-    def _init_executor(self, query: str, arguments: list) -> sqlite3.Cursor:
+    def _init_executor(self, query: str, *args: Any) -> sqlite3.Cursor:
         """ Initialize SQL executor with args for 'Prepared Statements' """
-        prep = SQLStatements(arguments)
+        prep = SQLStatements(*args)
         data = self._pool.execute(query, prep.prepared)
         return data
 
     def execute(self, query: str, *args: Any) -> str:
         """ Execute SQL command with args for 'Prepared Statements' """
-        data = self._init_executor(query, args)
+        data = self._init_executor(query, *args)
 
         status_word = query.split(" ")[0].strip().upper()
         status_code = data.rowcount if data.rowcount > 0 else 0
@@ -52,13 +52,11 @@ class PoolConnection:
 
     def fetch(self, query: str, *args: Any) -> list:
         """ Fetch DB data with args for 'Prepared Statements' """
-        data = self._init_executor(query, args).fetchall()
-        return data
+        return self._init_executor(query, *args).fetchall()
 
     def fetchrow(self, query: str, *args: Any) -> dict:
         """ Fetch DB row (one row only) with args for 'Prepared Statements' """
-        data = self._init_executor(query, args).fetchone()
-        return data
+        return self._init_executor(query, *args).fetchone()
 
 
 class AsyncPoolConnection(PoolConnection):
