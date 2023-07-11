@@ -1,7 +1,7 @@
 import sqlite3
 import asyncio
 
-from .sqlite import PoolConnection, AsyncPoolConnection
+from .pool import PoolConnection, AsyncPoolConnection
 from datetime import datetime, date
 
 __all__ = (
@@ -10,6 +10,7 @@ __all__ = (
 
 
 def dict_factory(cursor: sqlite3.Cursor, row: list) -> dict:
+    """ Convert SQLite3 data to dict """
     d = {}
     for index, col in enumerate(cursor.description):
         d[col[0]] = row[index]
@@ -44,7 +45,7 @@ class PostgresLite:
         return PoolConnection(db)
 
     async def connect_async(self) -> AsyncPoolConnection:
-        """ Coming soon:tm: """
+        """ Makes a connection to the database and returns the pool (async) """
         conn = sqlite3.connect(
             self._filename,
             isolation_level=None,
