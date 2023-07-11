@@ -6,21 +6,23 @@ loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
 
-async def background_task(db, i: int):
-    print(await db.execute(
+async def background_task(pool, i: int):
+    print(await pool.execute(
         "INSERT INTO users (name) VALUES (?) ON CONFLICT DO NOTHING",
         f"AlexFlipnote{i}"
     ))
 
 
 async def main():
-    db = await PostgresLite(
+    db = PostgresLite(
         "./asyncio_test.db",
         loop=loop
-    ).connect_async()
+    )
+
+    pool = await db.connect_async()
 
     # Create table
-    print(await db.execute("""
+    print(await pool.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL
@@ -28,16 +30,16 @@ async def main():
     """))
 
     for g in range(10):
-        loop.create_task(background_task(db, g))
+        loop.create_task(background_task(pool, g))
 
     await asyncio.sleep(1)
-    while db.queue_size >= 1:
+    while pool.queue_size >= 1:
         await asyncio.sleep(0.1)
 
     # Check if data exists
-    print(await db.fetch("SELECT * FROM users"))
+    print(await pool.fetch("SELECT * FROM users"))
 
-    await db.close()
+    await pool.close()
 
 
 loop.run_until_complete(main())
