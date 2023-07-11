@@ -1,6 +1,7 @@
 import sqlite3
+import asyncio
 
-from .sqlite import PoolConnection
+from .sqlite import PoolConnection, AsyncPoolConnection
 from datetime import datetime, date
 
 __all__ = (
@@ -16,14 +17,19 @@ def dict_factory(cursor: sqlite3.Cursor, row: list) -> dict:
 
 
 class PostgresLite:
-    def __init__(self, filename: str = "storage.db"):
+    def __init__(
+        self,
+        filename: str = "storage.db",
+        loop: asyncio.AbstractEventLoop = None
+    ):
         self._prepare_settings()
+        self._filename = filename
 
         if filename != ":memory:":
             if not filename.endswith(".db"):
                 raise ValueError("Database filename must end with '.db'")
 
-        self._filename = filename
+        self.loop = loop or asyncio.get_event_loop()
 
     def connect(self) -> PoolConnection:
         """ Makes a connection to the database and returns the pool (sync) """
@@ -37,9 +43,21 @@ class PostgresLite:
         db = conn.cursor()
         return PoolConnection(db)
 
-    async def connect_async(self) -> sqlite3.Connection:
+    async def connect_async(self) -> AsyncPoolConnection:
         """ Coming soon:tm: """
-        pass
+        conn = sqlite3.connect(
+            self._filename,
+            isolation_level=None,
+            check_same_thread=False,
+            detect_types=sqlite3.PARSE_DECLTYPES
+        )
+
+        conn.row_factory = dict_factory
+        db = conn.cursor()
+        pool = AsyncPoolConnection(db, self.loop)
+        pool._task = self.loop.create_task(pool._queue_manager())
+
+        return pool
 
     def _prepare_settings(self) -> None:
         """ Prepare SQLite settings for better experience """
