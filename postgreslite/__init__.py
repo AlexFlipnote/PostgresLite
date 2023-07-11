@@ -1,3 +1,4 @@
+# flake8: noqa
 from .handler import *
 from .sqlite import *
 
