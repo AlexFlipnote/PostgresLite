@@ -1,7 +1,7 @@
 from postgreslite import PostgresLite
 from datetime import datetime
 
-db = PostgresLite("./test_timestamp.db")
+db = PostgresLite("./test_timestamp.db").connect()
 
 data1 = db.execute("""
     CREATE TABLE IF NOT EXISTS test (

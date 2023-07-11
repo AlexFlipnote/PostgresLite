@@ -1,19 +1,37 @@
 from postgreslite import PostgresLite
 
 # Create database (or uses existing one)
-db = PostgresLite("hello_world.db")
+db = PostgresLite("./hello_world.db").connect()
 
 # Create table
-data1 = db.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)")
-print(data1)
+print(db.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL
+    )
+"""))
 
 # Insert data
-data2 = db.execute(
+print(db.execute(
     "INSERT INTO users (name) VALUES (?) ON CONFLICT DO NOTHING",
     "AlexFlipnote"
-)
-print(data2)
+))
+
+print(db.execute(
+    "INSERT INTO users (name) VALUES (?) ON CONFLICT DO NOTHING",
+    "AlexFlipnote2"
+))
+
+print(db.execute(
+    "INSERT INTO users (name) VALUES (?) ON CONFLICT DO NOTHING",
+    "AlexFlipnote3"
+))
+
+
+print(db.execute(
+    "INSERT INTO users (name) VALUES (?) ON CONFLICT DO NOTHING",
+    "AlexFlipnote4"
+))
 
 # Check if data exists
-data3 = db.fetch("SELECT * FROM users")
-print(data3)
+print(db.fetch("SELECT * FROM users"))
