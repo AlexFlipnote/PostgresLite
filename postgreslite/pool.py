@@ -19,8 +19,6 @@ class SQLStatements:
         """ Prepare statements for SQLite with *args provided from earlier """
         arg_len = len(self._args)
 
-        print(self._args)
-
         if arg_len <= 0:
             return ()
         return self._args
@@ -77,7 +75,7 @@ class AsyncPoolConnection(PoolConnection):
             try:
                 await self._background_task(query, *args, future=future)
             except Exception as e:
-                print(e)
+                print(f"PostgresLite error: {e}")
             self._queue.task_done()
 
     async def _background_task(self, query: str, *args: Any, future: asyncio.Future) -> None:
