@@ -41,7 +41,7 @@ class PoolConnection:
         """ Execute SQL command with args for 'Prepared Statements' """
         data = self._init_executor(query, *args)
 
-        status_word = query.split(" ")[0].strip().upper()
+        status_word = query.strip().split(" ")[0].upper()
         status_code = data.rowcount if data.rowcount > 0 else 0
         if status_word == "SELECT":
             status_code = len(data.fetchall())
@@ -72,10 +72,12 @@ class AsyncPoolConnection(PoolConnection):
     async def _queue_manager(self):
         while True:
             query, args, future = await self._queue.get()
+
             try:
                 await self._background_task(query, *args, future=future)
-            except Exception as e:
-                print(f"PostgresLite error: {e}")
+            except Exception:
+                pass
+
             self._queue.task_done()
 
     async def _background_task(self, query: str, *args: Any, future: asyncio.Future) -> None:
@@ -88,6 +90,7 @@ class AsyncPoolConnection(PoolConnection):
                 query,
                 prep.prepared
             )
+
             future.set_result(cursor)
         except Exception as e:
             future.set_exception(e)
@@ -96,7 +99,11 @@ class AsyncPoolConnection(PoolConnection):
         """ Initialize SQL executor with args for 'Prepared Statements' """
         future = self.loop.create_future()
         await self._queue.put((query, args, future))
-        return await future
+
+        try:
+            return await future
+        except Exception:
+            raise future.exception()
 
     @property
     def queue_size(self) -> int:
@@ -111,9 +118,12 @@ class AsyncPoolConnection(PoolConnection):
 
     async def execute(self, query: str, *args: Any) -> str:
         """ Execute SQL command with args for 'Prepared Statements' """
-        data = await self._init_executor(query, *args)
+        try:
+            data = await self._init_executor(query, *args)
+        except Exception as e:
+            raise e
 
-        status_word = query.split(" ")[0].strip().upper()
+        status_word = query.strip().split(" ")[0].upper()
         status_code = data.rowcount if data.rowcount > 0 else 0
         if status_word == "SELECT":
             status_code = len(data.fetchall())
@@ -122,10 +132,18 @@ class AsyncPoolConnection(PoolConnection):
 
     async def fetch(self, query: str, *args: Any) -> list:
         """ Fetch DB data with args for 'Prepared Statements' """
-        data = await self._init_executor(query, *args)
+        try:
+            data = await self._init_executor(query, *args)
+        except Exception as e:
+            raise e
+
         return data.fetchall()
 
     async def fetchrow(self, query: str, *args: Any) -> dict:
         """ Fetch DB row (one row only) with args for 'Prepared Statements' """
-        data = await self._init_executor(query, *args)
+        try:
+            data = await self._init_executor(query, *args)
+        except Exception as e:
+            raise e
+
         return data.fetchone()

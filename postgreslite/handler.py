@@ -9,6 +9,11 @@ __all__ = (
 )
 
 
+class CustomCursor(sqlite3.Cursor):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
 def dict_factory(cursor: sqlite3.Cursor, row: list) -> dict:
     """ Convert SQLite3 data to dict """
     d = {}

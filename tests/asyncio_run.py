@@ -8,8 +8,8 @@ asyncio.set_event_loop(loop)
 
 async def background_task(pool, i: int):
     print(await pool.execute(
-        "INSERT INTO users (name) VALUES (?) ON CONFLICT DO NOTHING",
-        f"AlexFlipnote{i}"
+        "INSERT INTO users (name, custom_id) VALUES (?, ?)",
+        f"AlexFlipnote{i}", 86477779717066752
     ))
 
 
@@ -25,8 +25,9 @@ async def main():
     print(await pool.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL
-        )
+            name TEXT UNIQUE NOT NULL,
+            custom_id BIGINT NOT NULL
+        );
     """))
 
     for g in range(10):
