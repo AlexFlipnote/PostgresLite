@@ -49,7 +49,7 @@ class PostgresLite:
         db = conn.cursor()
         return PoolConnection(db)
 
-    async def connect_async(self) -> AsyncPoolConnection:
+    def connect_async(self) -> AsyncPoolConnection:
         """ Makes a connection to the database and returns the pool (async) """
         conn = sqlite3.connect(
             self._filename,

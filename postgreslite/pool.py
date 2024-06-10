@@ -101,7 +101,8 @@ class AsyncPoolConnection(PoolConnection):
         await self._queue.put((query, args, future))
 
         try:
-            return await future
+            await future
+            return future.result()
         except Exception:
             raise future.exception()
 
