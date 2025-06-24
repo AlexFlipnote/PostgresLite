@@ -16,9 +16,6 @@ reinstall: uninstall install  ## Reinstall the package
 install_dev:	 ## Install the package in development mode
 	uv sync --all-extras || pip install .[dev]
 
-create_docs:	## Create the documentation
-	@cd docs && make html
-
 venv:  ## Create a virtual environment
 	uv venv || python -m venv .venv
 
