@@ -1,0 +1,171 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.pdm.source]
+name = "public"
+url = "https://github.com/AlexFlipnote/PostgresLite"
+
+[project]
+name = "PostgresLite"
+description = "Python SQLite combined with syntax compared to asyncpg progject."
+requires-python = ">=3.11.0"
+license = "MIT"
+
+dynamic = ["version"]
+readme = "README.md"
+keywords = ["asyncpg", "sqlite", "postgres", "lite", "database", "sql"]
+authors = [{name = "AlexFlipnote", email = "root@alexflipnote.dev"}]
+
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/AlexFlipnote/PostgresLite"
+Repository = "https://github.com/AlexFlipnote/PostgresLite"
+
+[project.optional-dependencies]
+dev = [
+    "pyright>=1.1.401",
+    "ruff>=0.11.13",
+    "toml>=0.10.2",
+]
+
+[tool.setuptools]
+packages = [
+  "postgreslite",
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "postgreslite.__version__"}
+readme = {file = ["README.md"]}
+
+[tool.ruff]
+target-version = "py311"
+indent-width = 4
+line-length = 256  # Debating to change this.. not sure yet
+output-format = "concise"
+
+# Files to include/exclude
+include = [
+  "postgreslite/*.py",
+]
+
+exclude = [
+  "**/__pycache__",
+  "**/*.pyc",
+  "*.egg-info",
+  ".venv",
+  "build",
+  "docs",
+  "dist",
+  "examples",
+  "tests",
+]
+
+[tool.ruff.lint]
+select = [
+  "A",     # flake8-builtins
+  "ANN",   # Annotations
+  "ARG",   # flake8-unused-arguments
+  "B",     # flake8-bugbear
+  "D",     # pydocstyle
+  "DTZ",   # flake8-datetimez
+  "E",     # Error
+  "ERA",   # eradicate
+  "F",     # Pyflakes
+  "FIX",   # flake8-fixme
+  "FLY",   # flynt
+  "FURB",  # refurb
+  "ICN",   # flake8-import-conventions
+  "ISC",   # flake8-implicit-str-concat
+  "N",     # pep8-naming
+  "PIE",   # flake8-pie
+  "PLE",   # Pylint Errors
+  "PLW",   # Pylint Warnings
+  "Q",     # flake8-quotes
+  "RET",   # flake8-return
+  "RUF",   # Ruff-specific rules
+  "SIM",   # flake8-simplify
+  "T",     # flake8-print
+  "TC",    # type-checking
+  "UP",    # pyupgrade
+  "W",     # Warning
+]
+
+extend-select = ["W", "E"]
+preview = true
+
+ignore = [
+  # Docstring: function
+  "D100",  # docstring in public module
+  "D104",  # Missing docstring in public package
+  "D203",  # 1 blank line required before class docstring
+  "D204",  # 1 blank line required after class docstring
+  "D210",  # No whitespaces surrounding docstring text
+  "D212",  # Multi-line docstring start at first line
+  "D400",  # Strictly must end with a period
+  "D401",  # First line should be in imperative mood
+  "D413",  # Missing blank line after last section
+  "D416",  # Section name should end with a colon
+
+  # Annotations
+  "ANN003",  # Missing type annotation for **kwargs
+  "ANN204",  # Missing for __init__ method
+
+  # Type-checking
+  "TC001", "TC002", "TC003", "TC004",  # Moving imports
+
+  # Docstring: Missing docs
+  "D101",  # class
+  "D105",  # magic method docstring required (__str__, __int__, etc)
+  "D107",  # __init__ docstring required
+
+  # Except cases
+  "B904",  # raise in except
+
+  # Simplify
+  "SIM105",  # Use contextlib.suppress
+  "SIM114",  # Merge if-else to one-liner
+
+  # Refurb
+  "FURB101",  # read-whole-file
+  "FURB103",  # write-whole-file
+
+  # Pylint Warnings
+  "PLW2901",  # Overwrite loop control variable
+
+  # Type hints
+  "UP037",  # type hints with quotes
+
+  # Variable shadowing
+  "A005",  # Files
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.pyright]
+reportOptionalOperand = "none"
+reportOptionalSubscript = "none"
+reportOptionalMemberAccess = "none"
+reportUnnecessaryTypeIgnoreComment = "warning"
+typeCheckingMode = "basic"
+pythonVersion = "3.11"
+
+include = [
+  "postgreslite",
+]
+
+exclude = [
+  "**/__pycache__",
+  "**/*.pyc",
+  "*.egg-info",
+  ".venv",
+  "build",
+  "docs",
+  "dist",
+  "examples",
+  "tests",
+]

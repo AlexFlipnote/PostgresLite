@@ -1,7 +1,6 @@
 from postgreslite import PostgresLite
 
 db = PostgresLite("./hello_world.db")
-
 pool = db.connect()
 
 pool.execute("""

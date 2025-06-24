@@ -1,4 +1,5 @@
 import asyncio
+import os
 
 from postgreslite import PostgresLite
 
@@ -14,12 +15,17 @@ async def background_task(pool, i: int):
 
 
 async def main():
+    try:
+        os.remove("./asyncio_test.db")
+    except FileNotFoundError:
+        pass
+
     db = PostgresLite(
         "./asyncio_test.db",
         loop=loop
     )
 
-    pool = await db.connect_async()
+    pool = db.connect_async()
 
     # Create table
     print(await pool.execute("""

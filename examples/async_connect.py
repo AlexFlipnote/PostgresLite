@@ -5,15 +5,10 @@ from postgreslite import PostgresLite
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
+db = PostgresLite("./hello_world.db", loop=loop)
+pool = db.connect_async()
 
 async def main():
-    db = PostgresLite(
-        "./hello_world.db",
-        loop=loop
-    )
-
-    pool = await db.connect_async()
-
     await pool.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
