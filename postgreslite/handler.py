@@ -85,7 +85,7 @@ class PostgresLite:
 
         def convert_timestamp(val: bytes) -> datetime:
             """Convert Unix epoch timestamp to datetime.datetime object."""
-            return datetime.fromtimestamp(int(val), tz=UTC)
+            return datetime.fromisoformat(val.decode()).replace(tzinfo=UTC)
 
         sqlite3.register_converter("date", convert_date)
         sqlite3.register_converter("datetime", convert_datetime)
