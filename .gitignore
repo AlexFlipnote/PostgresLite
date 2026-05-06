@@ -1,6 +1,8 @@
 # Custom ignore
 *.db
 uv.lock
+examples/schema
+examples/*.sql
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

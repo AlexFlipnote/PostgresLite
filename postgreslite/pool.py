@@ -2,15 +2,46 @@ import sqlite3
 import re
 import asyncio
 
-from typing import Any
+from contextlib import contextmanager, asynccontextmanager
+from collections.abc import AsyncIterator, Iterator
+from typing import Any, Self
 
 __all__ = (
     "AsyncPoolConnection",
     "PoolConnection",
     "SQLStatements",
+    "TableColumn",
 )
 
 re_asyncpg_arg = re.compile(r"\$(\d+)")
+re_valid_identifier = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+class TableColumn:
+    __slots__ = ("default", "name", "notnull", "pk", "type")
+
+    def __init__(self, *, name: str, type: str, notnull: bool, default: Any, pk: bool):  # noqa: ANN401, A002
+        self.name = name
+        self.type = type
+        self.notnull = notnull
+        self.default = default
+        self.pk = pk
+
+    @classmethod
+    def _from_row(cls, row: dict) -> "TableColumn":
+        return cls(
+            name=row["name"],
+            type=row["type"],
+            notnull=bool(row["notnull"]),
+            default=row["dflt_value"],
+            pk=bool(row["pk"]),
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"<TableColumn name={self.name!r} type={self.type!r} "
+            f"notnull={self.notnull} default={self.default}>"
+        )
 
 
 class SQLStatements:
@@ -24,15 +55,13 @@ class SQLStatements:
 
     @property
     def query(self) -> str:
-        """ Returns the query, and replaces asyncpg placeholders with SQLite placeholders. """
+        """ Returns the query, replacing asyncpg placeholders with SQLite placeholders. """
         return re_asyncpg_arg.sub(r"?", self._raw_query)
 
     @property
     def prepared(self) -> tuple:
         """ Prepare statements for SQLite with *args provided from earlier. """
-        arg_len = len(self._args)
-
-        if arg_len <= 0:
+        if len(self._args) <= 0:
             return ()
 
         if self.is_asyncpg():
@@ -46,14 +75,22 @@ class SQLStatements:
 
 
 class PoolConnection:
-    def __init__(
-        self,
-        pool: sqlite3.Cursor
-    ):
+    def __init__(self, pool: sqlite3.Cursor, conn: sqlite3.Connection):
         self._pool = pool
+        self._conn = conn
+
+    def __enter__(self) -> "PoolConnection":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
+    @property
+    def lastrowid(self) -> int | None:
+        """ The row ID of the last inserted row. """
+        return self._pool.lastrowid
 
     def _init_executor(self, query: str, *args: Any) -> sqlite3.Cursor:  # noqa: ANN401
-        """ Initialize SQL executor with args for 'Prepared Statements'. """
         prep = SQLStatements(query, *args)
         return self._pool.execute(prep.query, prep.prepared)
 
@@ -63,148 +100,209 @@ class PoolConnection:
 
         Parameters
         ----------
-        query
+        query:
             The query to execute.
-        *args
+        *args:
             The arguments to pass to the query.
 
         Returns
         -------
-        str
-            The status of the query.
+            The status of the query, e.g. "INSERT 1", "DELETE 3".
         """
         data = self._init_executor(query, *args)
-
         status_word = query.strip().split(" ")[0].upper()
-        status_code = max(0, data.rowcount)
-        if status_word == "SELECT":
-            status_code = len(data.fetchall())
-
-        return f"{status_word} {status_code}"
+        return f"{status_word} {max(0, data.rowcount)}"
 
     def fetch(self, query: str, *args: Any) -> list[dict]:  # noqa: ANN401
         """
-        Fetch DB data with args for 'Prepared Statements'.
+        Fetch all rows from a query.
 
         Parameters
         ----------
-        query
+        query:
             The query to execute.
-        *args
+        *args:
             The arguments to pass to the query.
 
         Returns
         -------
-        list[dict]
-            The data from the query.
+            All rows from the query.
         """
         return self._init_executor(query, *args).fetchall()
 
-    def fetchrow(self, query: str, *args: Any) -> dict:  # noqa: ANN401
+    def fetchrow(self, query: str, *args: Any) -> dict | None:  # noqa: ANN401
         """
-        Fetch DB row (one row only) with args for 'Prepared Statements'.
+        Fetch a single row from a query.
 
         Parameters
         ----------
-        query
+        query:
             The query to execute.
-        *args
+        *args:
             The arguments to pass to the query.
 
         Returns
         -------
-        dict
-            The data from the query.
+            The first row from the query, or None if no rows.
         """
         return self._init_executor(query, *args).fetchone()
 
-    def run_sql(self, filename: str, *args: Any) -> str:  # noqa: ANN401
+    def fetchval(self, query: str, *args: Any, column: int | str = 0) -> Any:  # noqa: ANN401
         """
-        Run SQL file with args for 'Prepared Statements'.
+        Fetch a single scalar value from the first row of a query.
 
         Parameters
         ----------
-        filename
-            The filename of the SQL file to execute.
-        *args
+        query:
+            The query to execute.
+        *args:
             The arguments to pass to the query.
+        column:
+            The column index or name to return (default 0).
 
         Returns
         -------
-        str
-            The status of the query.
+            The value at the given column, or None if no rows.
+        """
+        row = self.fetchrow(query, *args)
+        if row is None:
+            return None
+        if isinstance(column, str):
+            return row[column]
+        return list(row.values())[column]
+
+    def executemany(self, query: str, args_seq: list) -> str:
+        """
+        Execute a query against each item in args_seq.
+
+        Parameters
+        ----------
+        query:
+            The query to execute.
+        args_seq:
+            A list of argument tuples, one per execution.
+
+        Returns
+        -------
+            The status of the final execution.
+        """
+        prep_query = SQLStatements(query).query
+        is_asyncpg = SQLStatements(query).is_asyncpg()
+
+        converted = (
+            [SQLStatements(query, *args).prepared for args in args_seq]
+            if is_asyncpg else list(args_seq)
+        )
+
+        self._pool.executemany(prep_query, converted)
+        status_word = query.strip().split(" ")[0].upper()
+        return f"{status_word} {max(0, self._pool.rowcount)}"
+
+    @contextmanager
+    def transaction(self) -> Iterator[Self]:
+        """ Sync context manager for explicit transactions. """
+        self._pool.execute("BEGIN")
+        try:
+            yield self
+            self._pool.execute("COMMIT")
+        except Exception:
+            self._pool.execute("ROLLBACK")
+            raise
+
+    def run_sql(self, filename: str) -> str:
+        """
+        Load and execute all SQL statements from a file.
+
+        Parameters
+        ----------
+        filename:
+            Path to the SQL file.
+
+        Returns
+        -------
+            "SCRIPT OK" on success.
         """
         with open(filename, encoding="utf-8") as f:
             query = f.read()
-        return self.execute(query, *args)
+        self._conn.executescript(query)
+        return "SCRIPT OK"
+
+    def tables(self) -> list[str]:
+        """
+        Return the names of all user-defined tables in the database.
+
+        Returns
+        -------
+            Table names, sorted alphabetically.
+        """
+        rows = self._init_executor(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        ).fetchall()
+        return [row["name"] for row in rows]
+
+    def table_columns(self, table: str) -> list[TableColumn]:
+        """
+        Return column information for the given table.
+
+        Parameters
+        ----------
+        table:
+            The table name to inspect.
+
+        Returns
+        -------
+            One TableColumn per column with attributes: name, type, notnull, default, pk.
+        """
+        if not re_valid_identifier.match(table):
+            raise ValueError(f"Invalid table name: {table!r}")
+        rows = self._init_executor(f"PRAGMA table_info({table})").fetchall()
+        return [TableColumn._from_row(row) for row in rows]
+
+    def table_exists(self, table: str) -> bool:
+        """
+        Return whether a table exists in the database.
+
+        Parameters
+        ----------
+        table:
+            The table name to check.
+
+        Returns
+        -------
+            True if the table exists, False otherwise.
+        """
+        if not re_valid_identifier.match(table):
+            raise ValueError(f"Invalid table name: {table!r}")
+        row = self._init_executor(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", table
+        ).fetchone()
+        return row is not None
+
+    def close(self) -> None:
+        """ Close the cursor and connection. """
+        self._pool.close()
+        self._conn.close()
 
 
 class AsyncPoolConnection(PoolConnection):
-    def __init__(
-        self,
-        pool: sqlite3.Cursor,
-        loop: asyncio.AbstractEventLoop
-    ):
-        super().__init__(pool)
-        self.loop = loop
+    def __init__(self, pool: sqlite3.Cursor, conn: sqlite3.Connection):
+        super().__init__(pool, conn)
+        self._lock = asyncio.Lock()
 
-        self._queue = asyncio.Queue()
-        self._task: asyncio.Task = self.loop.create_task(
-            self._queue_manager()
-        )
+    async def __aenter__(self) -> "AsyncPoolConnection":
+        return self
 
-    async def _queue_manager(self) -> None:
-        while True:
-            query, args, future = await self._queue.get()
+    async def __aexit__(self, *_: object) -> None:
+        await self.close()
 
-            try:
-                await self._background_task(query, *args, future=future)
-            except Exception:
-                pass
-
-            self._queue.task_done()
-
-    async def _background_task(
-        self,
-        query: str,
-        *args: Any,  # noqa: ANN401
-        future: asyncio.Future
-    ) -> None:
-        prep = SQLStatements(query, *args)
-
-        try:
-            cursor: sqlite3.Cursor = await self.loop.run_in_executor(
-                None,
-                self._pool.execute,
-                prep.query,
-                prep.prepared
-            )
-
-            future.set_result(cursor)
-        except Exception as e:
-            future.set_exception(e)
+    async def _run(self, fn: Any, *args: Any) -> Any:  # noqa: ANN401
+        loop = asyncio.get_running_loop()
+        async with self._lock:
+            return await loop.run_in_executor(None, fn, *args)
 
     async def _init_executor(self, query: str, *args: Any) -> sqlite3.Cursor:  # noqa: ANN401
-        """ Initialize SQL executor with args for 'Prepared Statements'. """
-        future = self.loop.create_future()
-        await self._queue.put((query, args, future))
-
-        try:
-            await future
-            return future.result()
-        except Exception as e:
-            raise e
-
-    @property
-    def queue_size(self) -> int:
-        """ Get the size of the queue. """
-        return self._queue.qsize()
-
-    async def close(self) -> None:
-        """ Close the connection. """
-        await self._queue.join()
-        self._task.cancel()
-        self._pool.close()
+        prep = SQLStatements(query, *args)
+        return await self._run(self._pool.execute, prep.query, prep.prepared)
 
     async def execute(self, query: str, *args: Any) -> str:  # noqa: ANN401
         """
@@ -212,70 +310,190 @@ class AsyncPoolConnection(PoolConnection):
 
         Parameters
         ----------
-        query
+        query:
             The query to execute.
-        *args
+        *args:
             The arguments to pass to the query.
 
         Returns
         -------
-        str
-            The status of the query.
+            The status of the query, e.g. "INSERT 1", "DELETE 3".
         """
-        try:
-            data = await self._init_executor(query, *args)
-        except Exception as e:
-            raise e
-
+        data = await self._init_executor(query, *args)
         status_word = query.strip().split(" ")[0].upper()
-        status_code = max(0, data.rowcount)
-        if status_word == "SELECT":
-            status_code = len(data.fetchall())
+        return f"{status_word} {max(0, data.rowcount)}"
 
-        return f"{status_word} {status_code}"
-
-    async def fetch(self, query: str, *args: Any) -> list:  # noqa: ANN401
+    async def fetch(self, query: str, *args: Any) -> list[dict]:  # noqa: ANN401
         """
-        Fetch DB data with args for 'Prepared Statements'.
+        Fetch all rows from a query.
 
         Parameters
         ----------
-        query
+        query:
             The query to execute.
-        *args
+        *args:
             The arguments to pass to the query.
 
         Returns
         -------
-        list[dict]
-            The data from the query.
+            All rows from the query.
         """
-        try:
-            data = await self._init_executor(query, *args)
-        except Exception as e:
-            raise e
-
+        data = await self._init_executor(query, *args)
         return data.fetchall()
 
-    async def fetchrow(self, query: str, *args: Any) -> dict:  # noqa: ANN401
+    async def fetchrow(self, query: str, *args: Any) -> dict | None:  # noqa: ANN401
         """
-        Fetch DB row (one row only) with args for 'Prepared Statements'.
+        Fetch a single row from a query.
 
         Parameters
         ----------
-        query
+        query:
             The query to execute.
-        *args
+        *args:
             The arguments to pass to the query.
 
         Returns
         -------
-        dict
-            The data from the query.
+            The first row from the query, or None if no rows.
         """
-        try:
-            data = await self._init_executor(query, *args)
-        except Exception as e:
-            raise e
-
+        data = await self._init_executor(query, *args)
         return data.fetchone()
+
+    async def fetchval(self, query: str, *args: Any, column: int | str = 0) -> Any:  # noqa: ANN401
+        """
+        Fetch a single scalar value from the first row of a query.
+
+        Parameters
+        ----------
+        query:
+            The query to execute.
+        *args:
+            The arguments to pass to the query.
+        column:
+            The column index or name to return (default 0).
+
+        Returns
+        -------
+            The value at the given column, or None if no rows.
+        """
+        row = await self.fetchrow(query, *args)
+        if row is None:
+            return None
+        if isinstance(column, str):
+            return row[column]
+        return list(row.values())[column]
+
+    async def executemany(self, query: str, args_seq: list) -> str:
+        """
+        Execute a query against each item in args_seq.
+
+        Parameters
+        ----------
+        query:
+            The query to execute.
+        args_seq:
+            A list of argument tuples, one per execution.
+
+        Returns
+        -------
+            The status of the final execution.
+        """
+        prep_query = SQLStatements(query).query
+        is_asyncpg = SQLStatements(query).is_asyncpg()
+
+        converted = (
+            [SQLStatements(query, *args).prepared for args in args_seq]
+            if is_asyncpg else list(args_seq)
+        )
+
+        await self._run(self._pool.executemany, prep_query, converted)
+        status_word = query.strip().split(" ")[0].upper()
+        return f"{status_word} {max(0, self._pool.rowcount)}"
+
+    async def run_sql(self, filename: str) -> str:
+        """
+        Load and execute all SQL statements from a file.
+
+        Parameters
+        ----------
+        filename:
+            Path to the SQL file.
+
+        Returns
+        -------
+            "SCRIPT OK" on success.
+        """
+        def _read() -> str:
+            with open(filename, encoding="utf-8") as f:
+                return f.read()
+        content = await asyncio.to_thread(_read)
+        await self._run(self._conn.executescript, content)
+        return "SCRIPT OK"
+
+    async def tables(self) -> list[str]:
+        """
+        Return the names of all user-defined tables in the database.
+
+        Returns
+        -------
+            Table names, sorted alphabetically.
+        """
+        data = await self._init_executor(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        )
+        return [row["name"] for row in data.fetchall()]
+
+    async def table_columns(self, table: str) -> list[TableColumn]:
+        """
+        Return column information for the given table.
+
+        Parameters
+        ----------
+        table:
+            The table name to inspect.
+
+        Returns
+        -------
+            One TableColumn per column with attributes: name, type, notnull, default, pk.
+        """
+        if not re_valid_identifier.match(table):
+            raise ValueError(f"Invalid table name: {table!r}")
+        data = await self._init_executor(f"PRAGMA table_info({table})")
+        return [TableColumn._from_row(row) for row in data.fetchall()]
+
+    async def table_exists(self, table: str) -> bool:
+        """
+        Return whether a table exists in the database.
+
+        Parameters
+        ----------
+        table:
+            The table name to check.
+
+        Returns
+        -------
+            True if the table exists, False otherwise.
+        """
+        if not re_valid_identifier.match(table):
+            raise ValueError(f"Invalid table name: {table!r}")
+        data = await self._init_executor(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", table
+        )
+        return data.fetchone() is not None
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[Self]:
+        """ Async context manager for explicit transactions. """
+        await self.execute("BEGIN")
+        try:
+            yield self
+            await self.execute("COMMIT")
+        except Exception:
+            await self.execute("ROLLBACK")
+            raise
+
+    async def close(self) -> None:
+        """ Close the cursor and connection. """
+        async with self._lock:
+            self._pool.close()
+            self._conn.close()

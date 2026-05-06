@@ -2,7 +2,7 @@
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.pdm.source]
+[[tool.pdm.source]]
 name = "public"
 url = "https://github.com/AlexFlipnote/PostgresLite"
 
@@ -153,19 +153,22 @@ reportOptionalMemberAccess = "none"
 reportUnnecessaryTypeIgnoreComment = "warning"
 typeCheckingMode = "basic"
 pythonVersion = "3.11"
+extraPaths = ["./tests"]
 
 include = [
   "postgreslite",
 ]
 
 exclude = [
-  "**/__pycache__",
   "**/*.pyc",
+  "**/.*",
+  "**/__pycache__",
+  "**/node_modules",
   "*.egg-info",
   ".venv",
   "build",
-  "docs",
   "dist",
+  "docs",
   "examples",
   "tests",
 ]
