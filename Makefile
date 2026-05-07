@@ -33,7 +33,7 @@ venv:  ## Create a virtual environment
 	$(VENV_CMD)
 
 type:  ## Run pyright on the package
-	@$(RUN) pyright discord_http --pythonversion 3.11
+	@$(RUN) pyright postgreslite --pythonversion 3.11
 
 lint:  ## Run ruff linter
 	@$(RUN) ruff check --config pyproject.toml
