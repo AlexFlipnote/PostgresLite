@@ -17,4 +17,23 @@ except Exception:
 rows = pool.fetch("SELECT * FROM accounts")
 print(rows)  # [{'id': 1, 'balance': 400}, {'id': 2, 'balance': 400}]
 
+# Nested transactions become savepoints, so the inner one can fail on its own
+with pool.transaction():
+    pool.execute("UPDATE accounts SET balance = balance + 50 WHERE id = 1")
+    try:
+        with pool.transaction():
+            pool.execute("UPDATE accounts SET balance = balance - 1000 WHERE id = 2")
+            raise ValueError("Not enough money")
+    except ValueError:
+        pass
+
+rows = pool.fetch("SELECT * FROM accounts")
+print(rows)  # [{'id': 1, 'balance': 450}, {'id': 2, 'balance': 400}]
+
+# Or control it yourself
+tr = pool.transaction()
+tr.start()
+pool.execute("DELETE FROM accounts")
+tr.rollback()
+
 pool.close()

@@ -11,7 +11,7 @@ rows = [
 ]
 
 status = pool.executemany("INSERT INTO products (name, price) VALUES (?, ?)", rows)
-print(status)  # INSERT 3
+print(status)  # INSERT 0 3
 
 all_products = pool.fetch("SELECT * FROM products")
 print(all_products)

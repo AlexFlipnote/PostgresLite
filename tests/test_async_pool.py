@@ -16,7 +16,7 @@ class TestAsyncPoolConnection(unittest.IsolatedAsyncioTestCase):
 
     async def test_execute_returns_status(self):
         status = await self.pool.execute("INSERT INTO users (name) VALUES (?)", "Alice")
-        self.assertEqual(status, "INSERT 1")
+        self.assertEqual(status, "INSERT 0 1")
 
     async def test_fetch_returns_list(self):
         await self.pool.execute("INSERT INTO users (name) VALUES (?)", "Bob")
@@ -49,7 +49,7 @@ class TestAsyncPoolConnection(unittest.IsolatedAsyncioTestCase):
 
     async def test_asyncpg_placeholders(self):
         status = await self.pool.execute("INSERT INTO users (name) VALUES ($1)", "Grace")
-        self.assertEqual(status, "INSERT 1")
+        self.assertEqual(status, "INSERT 0 1")
         row = await self.pool.fetchrow("SELECT * FROM users WHERE name = $1", "Grace")
         self.assertEqual(row["name"], "Grace")
 
@@ -79,9 +79,8 @@ class TestAsyncPoolConnection(unittest.IsolatedAsyncioTestCase):
         self.assertIn("id", names)
         self.assertIn("name", names)
 
-    async def test_table_columns_rejects_invalid_name(self):
-        with self.assertRaises(ValueError):
-            await self.pool.table_columns("bad; name")
+    async def test_table_columns_missing_table(self):
+        self.assertEqual(await self.pool.table_columns("bad; name"), [])
 
     async def test_concurrent_inserts(self):
         tasks = [
@@ -91,9 +90,37 @@ class TestAsyncPoolConnection(unittest.IsolatedAsyncioTestCase):
             for i in range(10)
         ]
         results = await asyncio.gather(*tasks)
-        self.assertTrue(all(r == "INSERT 1" for r in results))
+        self.assertTrue(all(r == "INSERT 0 1" for r in results))
         count = await self.pool.fetchval("SELECT COUNT(*) FROM users")
         self.assertEqual(count, 10)
+
+
+    async def test_lastrowid(self):
+        await self.pool.execute("INSERT INTO users (name) VALUES (?)", "a")
+        self.assertEqual(self.pool.lastrowid, 1)
+
+    async def test_table_exists(self):
+        self.assertTrue(await self.pool.table_exists("users"))
+        self.assertFalse(await self.pool.table_exists("nope"))
+
+    async def test_concurrent_fetches_get_their_own_rows(self):
+        await self.pool.executemany("INSERT INTO users (name) VALUES ($1)", [(f"u{i}",) for i in range(50)])
+
+        async def check(i):
+            return await self.pool.fetchval("SELECT name FROM users WHERE name = $1", f"u{i}") == f"u{i}"
+
+        self.assertTrue(all(await asyncio.gather(*(check(i) for i in range(50)))))
+
+    async def test_sync_with_is_rejected(self):
+        with self.assertRaises(TypeError):
+            with self.pool:  # type: ignore
+                pass
+
+    async def test_close(self):
+        pool = PostgresLite(":memory:").connect_async()
+        async with pool:
+            self.assertFalse(pool.is_closed())
+        self.assertTrue(pool.is_closed())
 
 
 if __name__ == "__main__":

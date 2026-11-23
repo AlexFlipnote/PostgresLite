@@ -1,5 +1,5 @@
 import unittest
-from datetime import date, datetime, UTC
+from datetime import date, datetime, timedelta, timezone, UTC
 
 from helpers import make_sync_pool
 
@@ -11,7 +11,8 @@ class TestDatetimeHandlingSync(unittest.TestCase):
             "CREATE TABLE events ("
             "  d DATE,"
             "  dt DATETIME,"
-            "  ts TIMESTAMP"
+            "  ts TIMESTAMP,"
+            "  data JSON"
             ")"
         )
 
@@ -36,6 +37,32 @@ class TestDatetimeHandlingSync(unittest.TestCase):
         row = self.pool.fetchrow("SELECT ts FROM events")
         self.assertIsNotNone(row["ts"].tzinfo)
         self.assertEqual(row["ts"].tzinfo, UTC)
+
+    def test_timestamp_aware_is_converted_to_utc(self):
+        dt = datetime(2024, 1, 1, 12, 0, tzinfo=timezone(timedelta(hours=2)))
+        self.pool.execute("INSERT INTO events (ts) VALUES (?)", dt)
+        value = self.pool.fetchval("SELECT ts FROM events")
+        self.assertEqual(value, dt)
+        self.assertEqual(value.hour, 10)
+        self.assertEqual(value.tzinfo, UTC)
+
+    def test_current_timestamp(self):
+        self.pool.execute("INSERT INTO events (ts) VALUES (CURRENT_TIMESTAMP)")
+        self.assertEqual(self.pool.fetchval("SELECT ts FROM events").tzinfo, UTC)
+
+    def test_json_roundtrip(self):
+        for value in ({"a": [1, 2], "b": None}, [1, "two"]):
+            self.pool.execute("DELETE FROM events")
+            self.pool.execute("INSERT INTO events (data) VALUES ($1)", value)
+            self.assertEqual(self.pool.fetchval("SELECT data FROM events"), value)
+
+    def test_executemany_adapts_values(self):
+        self.pool.executemany(
+            "INSERT INTO events (d, data) VALUES (?, ?)",
+            [(date(2024, 1, 1), {"n": 1}), (date(2024, 1, 2), {"n": 2})]
+        )
+        rows = self.pool.fetch("SELECT d, data FROM events ORDER BY d")
+        self.assertEqual(rows[1], {"d": date(2024, 1, 2), "data": {"n": 2}})
 
 
 if __name__ == "__main__":

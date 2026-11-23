@@ -17,3 +17,5 @@ pool.execute(
 
 data = pool.fetch("SELECT * FROM users")
 print(data)
+
+pool.close()

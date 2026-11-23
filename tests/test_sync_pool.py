@@ -1,3 +1,5 @@
+import os
+import tempfile
 import unittest
 
 from helpers import make_sync_pool
@@ -15,7 +17,7 @@ class TestPoolConnectionSync(unittest.TestCase):
 
     def test_execute_returns_status(self):
         status = self.pool.execute("INSERT INTO users (name) VALUES (?)", "Alice")
-        self.assertEqual(status, "INSERT 1")
+        self.assertEqual(status, "INSERT 0 1")
 
     def test_execute_delete_status(self):
         self.pool.execute("INSERT INTO users (name) VALUES (?)", "Bob")
@@ -65,7 +67,7 @@ class TestPoolConnectionSync(unittest.TestCase):
 
     def test_asyncpg_placeholders_in_execute(self):
         status = self.pool.execute("INSERT INTO users (name) VALUES ($1)", "Karl")
-        self.assertEqual(status, "INSERT 1")
+        self.assertEqual(status, "INSERT 0 1")
         row = self.pool.fetchrow("SELECT * FROM users WHERE name = $1", "Karl")
         self.assertEqual(row["name"], "Karl")
 
@@ -92,13 +94,68 @@ class TestPoolConnectionSync(unittest.TestCase):
         self.assertIn("id", names)
         self.assertIn("name", names)
 
-    def test_table_columns_rejects_invalid_name(self):
-        with self.assertRaises(ValueError):
-            self.pool.table_columns("drop; table")
+    def test_table_columns_missing_table(self):
+        self.assertEqual(self.pool.table_columns("drop; table"), [])
 
     def test_empty_fetch(self):
         rows = self.pool.fetch("SELECT * FROM users")
         self.assertEqual(rows, [])
+
+
+    def test_status_tags(self):
+        self.pool.execute("INSERT INTO users (name) VALUES ('a'), ('b')")
+        self.assertEqual(self.pool.execute("UPDATE users SET name = name || '!'"), "UPDATE 2")
+        self.assertEqual(self.pool.execute("SELECT * FROM users"), "SELECT 2")
+        self.assertEqual(self.pool.execute("CREATE TABLE x (id INTEGER)"), "CREATE TABLE")
+        self.assertEqual(
+            self.pool.executemany("INSERT INTO x VALUES ($1)", [(1,), (2,), (3,)]),
+            "INSERT 0 3"
+        )
+
+    def test_insert_returning_counts(self):
+        status = self.pool.execute("INSERT INTO users (name) VALUES ('a'), ('b') RETURNING id")
+        self.assertEqual(status, "INSERT 0 2")
+
+    def test_lastrowid(self):
+        self.pool.execute("INSERT INTO users (name) VALUES (?)", "a")
+        self.assertEqual(self.pool.lastrowid, 1)
+        self.pool.fetch("SELECT * FROM users")
+        self.assertEqual(self.pool.lastrowid, 1)
+        self.pool.executemany("INSERT INTO users (name) VALUES (?)", [("b",), ("c",)])
+        self.assertEqual(self.pool.lastrowid, 3)
+
+    def test_fetchval_column(self):
+        self.pool.execute("INSERT INTO users (name) VALUES (?)", "a")
+        self.assertEqual(self.pool.fetchval("SELECT id, name FROM users", column=1), "a")
+        self.assertEqual(self.pool.fetchval("SELECT id, name FROM users", column="name"), "a")
+
+    def test_fetchval_duplicate_column_names(self):
+        self.pool.execute("INSERT INTO users (name) VALUES (?)", "a")
+        val = self.pool.fetchval("SELECT 1 AS v, 2 AS v, 3 AS w", column=2)
+        self.assertEqual(val, 3)
+
+    def test_table_exists(self):
+        self.assertTrue(self.pool.table_exists("users"))
+        self.assertFalse(self.pool.table_exists("nope"))
+        self.assertFalse(self.pool.table_exists("x'; DROP TABLE users; --"))
+
+    def test_table_columns_quoted_name(self):
+        self.pool.execute('CREATE TABLE "my-table" (id INTEGER PRIMARY KEY)')
+        self.assertEqual([c.name for c in self.pool.table_columns("my-table")], ["id"])
+
+    def test_run_sql(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "seed.sql")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("INSERT INTO users (name) VALUES ('a');\nINSERT INTO users (name) VALUES ('b');\n")
+            self.assertEqual(self.pool.run_sql(path), "SCRIPT OK")
+        self.assertEqual(self.pool.fetchval("SELECT COUNT(*) FROM users"), 2)
+
+    def test_is_closed(self):
+        pool = make_sync_pool()
+        self.assertFalse(pool.is_closed())
+        pool.close()
+        self.assertTrue(pool.is_closed())
 
 
 if __name__ == "__main__":
